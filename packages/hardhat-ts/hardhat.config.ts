@@ -334,6 +334,76 @@ const findFirstAddr = async (ethers: TEthers, addr: string) => {
   throw `Could not normalize address: ${addr}`;
 };
 
+task('match', 'matches address with NFT by maximizing preferences', async (_, { ethers }) => {
+  console.log('here');
+
+  const fakePreferenceMatrix = [
+    [1, 2, 3, 4],
+    [2, 4, 1, 3],
+    [1, 4, 3, 2],
+    [4, 3, 1, 2],
+  ];
+
+  let solution = minimizePreferenceWithBranchAndBound(fakePreferenceMatrix);
+  console.log('solution', solution);
+  let score = 0;
+  for (let i = 0; i < solution.length; i++) {
+    score += fakePreferenceMatrix[i][solution[i]];
+    console.log(`${i} : ${solution[i]}`);
+  }
+
+  console.log('score', score);
+});
+
+function minimizePreferenceWithBranchAndBound(preferenceMatrix: number[][]) {
+  let solution = [];
+  for (var i = 0; i < preferenceMatrix.length; i++) {
+    let minSum = Infinity;
+    let minSumIndex = -1;
+    for (var j = 0; j < preferenceMatrix[i].length; j++) {
+      if (solution.indexOf(j) !== -1) {
+        continue;
+      }
+      let sum = preferenceMatrix[i][j];
+      for (var ii = i; ii < preferenceMatrix.length; ii++) {
+        if (ii != i) {
+          let seenAndCurrentIndices = [j];
+          sum += getMinIgnoreIndices(preferenceMatrix[ii], seenAndCurrentIndices);
+        }
+      }
+      if (sum < minSum) {
+        minSum = sum;
+        minSumIndex = j;
+      }
+    }
+    solution.push(minSumIndex);
+  }
+  return solution;
+}
+
+function getMinIgnoreIndices(array: number[], indices: number[]) {
+  let min = Infinity;
+  for (let i = 0; i < array.length; i++) {
+    if (indices.indexOf(i) === -1) {
+      min = Math.min(min, array[i]);
+    }
+  }
+  return min;
+}
+
+function findIndexOfMinAboveThreshold(array: number[], min: number): [number, number] {
+  let seenMin: number = array.length + 1;
+  let indexOfMin: number = -1;
+  for (let i = 0; i < array.length; i++) {
+    let val: number = array[i];
+    if (val > min && val < seenMin) {
+      seenMin = val;
+      indexOfMin = i;
+    }
+  }
+  return [indexOfMin, seenMin];
+}
+
 task('accounts', 'Prints the list of accounts', async (_, { ethers }) => {
   const accounts = await ethers.provider.listAccounts();
   accounts.forEach((account: any) => console.log(account));
