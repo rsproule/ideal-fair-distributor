@@ -338,10 +338,10 @@ task('match', 'matches address with NFT by maximizing preferences', async (_, { 
   console.log('here');
 
   const fakePreferenceMatrix = [
-    [1, 2, 3, 4],
-    [2, 4, 1, 3],
-    [1, 4, 3, 2],
-    [4, 3, 1, 2],
+    [0, 1, 2, 3],
+    [1, 2, 2, 3],
+    [0, 1, 2, 3],
+    [0, 1, 2, 3]
   ];
 
   let solution = minimizePreferenceWithBranchAndBound(fakePreferenceMatrix);

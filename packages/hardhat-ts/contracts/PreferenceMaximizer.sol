@@ -6,11 +6,13 @@ import 'hardhat/console.sol';
 import "@openzeppelin/contracts/access/Ownable.sol"; //https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/access/Ownable.sol
 
 contract PreferenceMaximizer is Ownable {
-  uint totalCommitments = 0;
+  uint constant MAX_INT =  2**256 - 1;
+  uint public totalCommitments = 0;
   uint totalReveals = 0;
   // need to edit this before deploying with number of NFTs there are
   uint constant expectedAgents = 4;
-  uint[expectedAgents][expectedAgents] preferenceMatrix;
+  uint[expectedAgents][expectedAgents] public preferenceMatrix;
+  uint[expectedAgents] public optimalSolution;
 
   Phase currentPhase = Phase.Commit;
   enum Phase {
@@ -30,6 +32,7 @@ contract PreferenceMaximizer is Ownable {
   constructor(address[] memory whitelist) onlyOwner {
     for (uint i = 0; i < whitelist.length; i++) {
         _whitelist[whitelist[i]] = true;
+        optimalSolution[i] = whitelist.length + 1;
     }
   }
 
@@ -49,10 +52,10 @@ contract PreferenceMaximizer is Ownable {
     PreferenceCommitment storage commitment = _commitments[msg.sender];
 
     // assert the commitment matches this input
-    require(keccak256(abi.encodePacked(msg.sender, preferences, secret)) == commitment.commitment, "Commitment does not match");
+    require(makeCommitment(preferences, secret) == commitment.commitment, "Commitment does not match");
     // lock in this preference
-    commitment.preferences = preferences;
-
+    // commitment.preferences = preferences;
+    _commitments[msg.sender] = PreferenceCommitment(msg.sender, commitment.commitment, preferences);
     // might as well store this stuff in the format the optimizer prefers, tho theoretically if we 
     // cared about gas this should totally happen in the offchain function
     for (uint i = 0; i < preferences.length; i++) {
@@ -63,23 +66,78 @@ contract PreferenceMaximizer is Ownable {
   }
 
   /// @notice this function is readonly, once all commit reveal is done. 
-  function optimalSolution() public returns (uint[] memory){
+  function commitOptimalSolution() public {
     require(totalReveals == expectedAgents, "Missing reveals.");
-    return calculateOptimalMatching(); 
+    require(optimalSolution[0] == expectedAgents + 1, "Optimal solution already found.");
+    uint[] memory s = calculateOptimalMatching();
+    // just copy this array into storage
+    for (uint i = 0; i < expectedAgents; i++) {
+      optimalSolution[i] = s[i];
+    }
   }
 
 
   /// @notice this is a pure readonly function meant to be a helper for 
   /// generating ur commitment
-  function makeCommitment(uint[] calldata preferences, bytes32 secret) public view returns (bytes32){
+  function makeCommitment(uint[] calldata preferences, bytes32 secret) public view returns (bytes32) {
     require(preferences.length == expectedAgents, "Incorrect length of preferences");
     return keccak256(abi.encodePacked(msg.sender, preferences, secret)); 
 
   }
   
+  function indexOf(uint[] memory array, uint target, uint start) private pure returns (uint) {
+    for (uint i = start; i < array.length; i++) {
+      if (array[i] == target) {
+        return i;
+      }
+    }    
+    return array.length + 1;
+  }
 
-  function calculateOptimalMatching() public returns(uint[] memory) {
+  function initArrayNoCollisions(uint length) pure private returns (uint[] memory) {
+    uint[] memory solution = new uint[](length); 
+    for (uint i = 0; i < length; i++) {
+      solution[i] = length + 1; // length plus 1 will never be a valid index in the array, cant use -1, uint
+    }
+    return solution;
+  }
+
+  function getMinIgnoreIndices(uint[4] storage array, uint index) private view returns(uint min) {
+    min = MAX_INT;
+    for (uint i = 0; i < array.length; i++) {
+      if (array[i] < min && i != index) {
+        min = array[i];
+      }
+    }
+  }
+
+  function calculateOptimalMatching() public view returns(uint[] memory) {
+    // get the pref matrix in memory 
+    uint[expectedAgents][expectedAgents] storage prefMatrix = preferenceMatrix;
     // // convert this to solidity
+    // unfortunately this inits soltion with all 0s, which is not gonna work
+    uint[] memory solution = initArrayNoCollisions(expectedAgents);
+  
+    for (uint i = 0; i < prefMatrix.length; i++) {
+      uint minSum =  MAX_INT;
+      uint minSumIndex = prefMatrix.length;
+      for (uint j = 0; j < prefMatrix[i].length; j++) {
+        if (indexOf(solution, j, 0) <= prefMatrix[i].length) continue;
+        uint sum = prefMatrix[i][j];
+        for (uint ii = i; ii < prefMatrix.length; ii++) {
+          if (ii != i) {
+            sum += getMinIgnoreIndices(prefMatrix[ii], j);
+          }
+        }
+        if (sum < minSum) {
+          minSum = sum;
+          minSumIndex = j;
+        }
+      }
+      solution[i] = minSumIndex;
+    }
+
+    return solution;
     // uint solution = [];
     // for (var i = 0; i < preferenceMatrix.length; i++) {
     //   let minSum = Infinity;
